@@ -1,0 +1,94 @@
+networks:
+  monitoring:
+
+services:
+  influxdb2:
+    image: influxdb:2.8.0-alpine
+    ports:
+      - 8086:8086
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME_FILE: /run/secrets/influxdb2_admin_username
+      DOCKER_INFLUXDB_INIT_PASSWORD_FILE: /run/secrets/influxdb2_admin_password
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE: /run/secrets/influxdb2_admin_token
+      DOCKER_INFLUXDB_INIT_ORG: Diplom
+      DOCKER_INFLUXDB_INIT_BUCKET: Diplom_signals_bucket
+    secrets:
+      - influxdb2_admin_username
+      - influxdb2_admin_password
+      - influxdb2_admin_token
+    volumes:
+      - type: volume
+        source: influxdb2-data
+        target: /var/lib/influxdb2
+      - type: volume
+        source: influxdb2-config
+        target: /etc/influxdb2
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8086/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 5s
+    networks:
+      - monitoring
+
+  grafana:
+      container_name: grafana
+      build:
+        context: ./grafana
+        dockerfile: ./Dockerfile
+      ports:
+        - 3000:3000
+      secrets:
+        - influxdb2_admin_token
+      depends_on:
+        influxdb2:
+          condition: service_healthy
+      networks:
+        - monitoring
+
+  mlflow:
+    container_name: mlflow
+    build:
+      context: ./mlflow_runs
+      dockerfile: ./Dockerfile
+    ports:
+      - 5050:5000
+    command: mlflow server --host 0.0.0.0 --port 5000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monitoring
+
+  model_pinn:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    container_name: model_pinn
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE: /run/secrets/influxdb2_admin_token
+    secrets:
+      - influxdb2_admin_token
+    depends_on:
+      influxdb2:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+secrets:
+  influxdb2_admin_username:
+    file: ./env_vars/.env.influxdb2_admin_username
+  influxdb2_admin_password:
+    file: ./env_vars/.env.influxdb2_admin_password
+  influxdb2_admin_token:
+    file: ./env_vars/.env.influxdb2_admin_token
+volumes:
+  influxdb2-data:
+  influxdb2-config:

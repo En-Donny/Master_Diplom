@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    uid: influxdb-prod
+    type: influxdb
+    access: proxy
+    url: http://influxdb2:8086
+    isDefault: true
+    editable: true
+    jsonData:
+      version: Flux
+      organization: Diplom
+      defaultBucket: Diplom_signals_bucket
+      tlsSkipVerify: false
+    secureJsonData:
+      token: $INFLUXDB_TOKEN
